@@ -7,22 +7,18 @@ import java.util.Random;
 
 public class GameMain {
 
-    // ---------- Ekran sabitleri ----------
     private static final int CONSOLE_W = 80;
     private static final int CONSOLE_H = 24;
     private static final int FONT_SIZE = 20;
-    private static final int HUD_X     = 47;
+    private static final int HUD_X     = 53;
 
-    // ---------- Ekran modu ----------
     private static final int MAZE  = 1;
     private static final int TREE  = 2;
     private static final int TABLE = 3;
     private int currentScreen = MAZE;
 
-    // ---------- Enigma ----------
     private Console cn;
 
-    // ---------- Oyun nesneleri ----------
     private Board          board;
     private Player         player;
     private Robot[]        robots;
@@ -35,21 +31,22 @@ public class GameMain {
     private TruthTable     truthTable;
     private HighScoreList  highScoreList;
 
-    // ---------- Zamanlama ----------
     private long startTime;
+    private long pausedMs       = 0;
+    private long pauseStart     = 0;
+    private long screenEnterTime = 0;
     private int  robotTimer;
     private int  inputTimer;
 
-    // ---------- Klavye ----------
     private volatile int rkey  = 0;
     private volatile int keypr = 0;
 
     private boolean paused   = false;
     private boolean gameOver = false;
+    private String  treeMessage = "";
 
     private Random rand = new Random();
 
-    // ================================================================
     public GameMain() {
         cn = Enigma.getConsole("Logic Maze Game", CONSOLE_W, CONSOLE_H, FONT_SIZE);
 
@@ -62,10 +59,9 @@ public class GameMain {
         });
 
         board = new Board();
-        // maze.txt proje kök klasöründe (compile.bat ile aynı yerde) olmalı
         if (!board.loadMazeFromFile("maze.txt"))
-            board.generateMaze();
-
+            System.out.println("ERROR: maze.txt yüklenemedi!");
+            // board.generateMaze();
         player        = new Player();
         robots        = new Robot[100];
         robotCount    = 0;
@@ -78,23 +74,21 @@ public class GameMain {
         highScoreList = new HighScoreList();
         highScoreList.loadFromFile("highscore.txt");
 
-        // Oyuncuyu rastgele boş hücreye yerleştir
+
         int[] pos = randomFreeCell();
         player.x = pos[0];
         player.y = pos[1];
 
-        // 3 başlangıç robotu
-        for (int i = 0; i < 3; i++) {
-            int[] rp = randomFreeCell();
-            robots[robotCount++] = new Robot(rp[0], rp[1]);
-        }
+        for (int i = 0; i < 10; i++)
+            spawnFromQueue();
+        System.out.println("DEBUG init: symbols=" + symbolCount + " robots=" + robotCount);
 
         startTime  = System.currentTimeMillis();
         robotTimer = 0;
         inputTimer = 0;
     }
 
-    // ================================================================
+
     public void run() {
         while (!gameOver) {
             long t0 = System.currentTimeMillis();
@@ -104,6 +98,9 @@ public class GameMain {
             if (!paused && currentScreen == MAZE) {
                 robotTimer++;
                 inputTimer++;
+
+                for (int i = 0; i < robotCount; i++)
+                    robots[i].tickModeSwitch();
 
                 if (fireball.isActive())   updateFireball();
                 if (robotTimer >= 4)       { moveAllRobots();  robotTimer = 0; }
@@ -120,45 +117,83 @@ public class GameMain {
         }
     }
 
-    // ================================================================
-    // INPUT
-    // ================================================================
+    // INPUT HANDLING
     private void handleInput() {
         if (keypr != 1) return;
         keypr = 0;
 
+        if (rkey == KeyEvent.VK_ESCAPE) { gameOver = true; return; }
+
+        // Screen geçişi (Key 1/2/3 maze/tree/table)
+        if      (rkey == KeyEvent.VK_1) { paused = false; switchScreen(MAZE);  return; }
+        else if (rkey == KeyEvent.VK_2) { paused = true;  switchScreen(TREE);  return; }
+        else if (rkey == KeyEvent.VK_3) { paused = true;  switchScreen(TABLE); return; }
+
+        if (currentScreen == MAZE) {
+            if (rkey == KeyEvent.VK_P) { paused = !paused; return; }
+        }
+
         if (currentScreen == MAZE && !paused) {
             int dx = 0, dy = 0;
-            if      (rkey == KeyEvent.VK_LEFT)  dx = -1;
+            if      (rkey == KeyEvent.VK_LEFT)   dx = -1;
             else if (rkey == KeyEvent.VK_RIGHT)  dx =  1;
             else if (rkey == KeyEvent.VK_UP)     dy = -1;
             else if (rkey == KeyEvent.VK_DOWN)   dy =  1;
             else if (rkey == KeyEvent.VK_SPACE)  tryFireFireball();
-            else if (rkey == KeyEvent.VK_M)      player.toggleStorageMode();
+            else if (rkey == KeyEvent.VK_M)     player.toggleStorageMode();
 
             if (dx != 0 || dy != 0) {
-                // Önce sembol kontrolü
                 int nx = player.x + dx, ny = player.y + dy;
                 checkAndCollectSymbol(nx, ny);
                 player.move(dx, dy, board, robots, robotCount);
             }
+            return;
         }
 
         if (currentScreen == TREE) {
-            if      (rkey == KeyEvent.VK_W) tree.moveCursor('W');
-            else if (rkey == KeyEvent.VK_A) tree.moveCursor('A');
-            else if (rkey == KeyEvent.VK_D) tree.moveCursor('D');
+            if      (rkey == KeyEvent.VK_W) { if (tree.moveCursor('W')) player.score--; }
+            else if (rkey == KeyEvent.VK_A) { if (tree.moveCursor('A')) player.score--; }
+            else if (rkey == KeyEvent.VK_D) { if (tree.moveCursor('D')) player.score--; }
+            else if (rkey == KeyEvent.VK_T) {
+                if (player.getBackpackSize() > 0) {
+                    char sym = player.removeFromBackpack(0);
+                    tree.placeSymbol(sym);
+                    treeMessage = "Placed '" + sym + "' on tree.";
+                } else {
+                    treeMessage = "Backpack is empty!";
+                }
+            }
+            else if (rkey == KeyEvent.VK_R) {
+                char sym = tree.removeAtCursor();
+                if (sym != 0) {
+                    if (player.addToBackpack(sym)) {
+                        player.score -= 2;
+                        treeMessage = "Removed '" + sym + "' to backpack. (-2)";
+                    } else {
+                        tree.placeSymbol(sym);
+                        treeMessage = "Backpack is full!";
+                    }
+                } else {
+                    treeMessage = "Slot is empty!";
+                }
+            }
+            else if (rkey == KeyEvent.VK_F) {
+                if (tree.isValid()) {
+                    int bonus = 10 * tree.getNodeCount();
+                    player.score += bonus;
+                    treeMessage = "Tree OK! +" + bonus + " points!";
+                    switchScreen(TABLE);
+                } else {
+                    player.score -= 10;
+                    treeMessage = "Invalid tree! Min 3 vars & depth 3. (-10)";
+                }
+                return;
+            }
+            return;
         }
 
-        // Ekran geçişi
-        if      (rkey == KeyEvent.VK_1) { paused = false;  switchScreen(MAZE);  }
-        else if (rkey == KeyEvent.VK_2) { paused = true;   switchScreen(TREE);  }
-        else if (rkey == KeyEvent.VK_3) { paused = true;   switchScreen(TABLE); }
     }
 
-    // ================================================================
-    // SEMBOL TOPLAMA
-    // ================================================================
     private void checkAndCollectSymbol(int nx, int ny) {
         for (int i = 0; i < symbolCount; i++) {
             if (symbols[i] != null && symbols[i].x == nx && symbols[i].y == ny) {
@@ -171,20 +206,26 @@ public class GameMain {
     private void collectSymbol(int idx) {
         char sym = symbols[idx].symbol;
         board.setCell(symbols[idx].y, symbols[idx].x, ' ');
-        symbols[idx] = null;
+        removeSymbol(idx);
+
+
+        if (sym == '@') {
+            player.fireballCount++;
+            player.score += 5;
+            return;
+        }
 
         if (player.storageTree) {
-            tree.placeSymbol(sym);
+            if (!tree.placeSymbol(sym))       
+                player.addToBackpack(sym);     
         } else {
-            if (!player.addToBackpack(sym))
-                tree.placeSymbol(sym);   // backpack dolu → ağaca
+            if (!player.addToBackpack(sym))    
+                tree.placeSymbol(sym);         
         }
         player.score += 5;
     }
 
-    // ================================================================
     // FIREBALL
-    // ================================================================
     private void tryFireFireball() {
         if (player.fireballCount > 0 && !fireball.isActive()) {
             player.fireballCount--;
@@ -203,21 +244,25 @@ public class GameMain {
         }
     }
 
+    // ROBOT
     private void removeRobot(int idx) {
         robots[idx] = robots[robotCount - 1];
         robots[robotCount - 1] = null;
         robotCount--;
     }
 
-    // ================================================================
-    // ROBOT HAREKET
-    // ================================================================
+    private void removeSymbol(int idx) {
+        symbols[idx] = symbols[symbolCount - 1];
+        symbols[symbolCount - 1] = null;
+        symbolCount--;
+    }
+
     private void moveAllRobots() {
         for (int i = 0; i < robotCount; i++) {
             int tx = player.x, ty = player.y;
 
             if (robots[i].targeted) {
-                // En yakın mantık sembolüne git
+                // En yakın LogicSymbol'ü hedefle, yoksa player konumunu hedefle
                 int best = Integer.MAX_VALUE;
                 for (int s = 0; s < symbolCount; s++) {
                     if (symbols[s] == null) continue;
@@ -229,22 +274,18 @@ public class GameMain {
             } else {
                 robots[i].step(board, robots, robotCount, player.x, player.y);
             }
-
-            // Robot sembolün üstüne gelirse sembolü yok et
-            for (int s = 0; s < symbolCount; s++) {
+            for (int s = symbolCount - 1; s >= 0; s--) {
                 if (symbols[s] != null
                         && symbols[s].x == robots[i].x
                         && symbols[s].y == robots[i].y) {
                     board.setCell(symbols[s].y, symbols[s].x, ' ');
-                    symbols[s] = null;
+                    removeSymbol(s);
                 }
             }
         }
     }
 
-    // ================================================================
     // NEIGHBOR HARM (her tick -5 HP)
-    // ================================================================
     private void checkNeighborHarm() {
         int[] dx = {0, 0, -1, 1};
         int[] dy = {-1, 1, 0, 0};
@@ -257,9 +298,7 @@ public class GameMain {
                 }
     }
 
-    // ================================================================
     // INPUT QUEUE
-    // ================================================================
     private void spawnFromQueue() {
         char elem = inputQueue.dequeue();
         int[] pos = randomFreeCell();
@@ -269,7 +308,11 @@ public class GameMain {
             if (robotCount < robots.length)
                 robots[robotCount++] = new Robot(pos[0], pos[1]);
         } else if (elem == '@') {
-            player.fireballCount++;
+            // Fireball paketini maze'e koy, oyuncu yürüyüp toplasın
+            if (symbolCount < symbols.length) {
+                symbols[symbolCount++] = new LogicSymbol(pos[0], pos[1], '@');
+                board.setCell(pos[1], pos[0], '@');
+            }
         } else if (elem != ' ') {
             if (symbolCount < symbols.length) {
                 symbols[symbolCount++] = new LogicSymbol(pos[0], pos[1], elem);
@@ -278,9 +321,7 @@ public class GameMain {
         }
     }
 
-    // ================================================================
     // GAME OVER
-    // ================================================================
     private void handleGameOver() {
         clearScreen();
         writeColored(28, 10, "GAME  OVER", Color.RED);
@@ -293,9 +334,8 @@ public class GameMain {
         try { Thread.sleep(5000); } catch (InterruptedException ignored) {}
     }
 
-    // ================================================================
+
     // RENDER
-    // ================================================================
     private void render() {
         switch (currentScreen) {
             case MAZE:  renderMaze();  break;
@@ -305,40 +345,32 @@ public class GameMain {
     }
 
     private void renderMaze() {
-        // Maze grid
         for (int r = 0; r < Board.ROWS; r++)
             for (int c = 0; c < Board.COLS; c++) {
                 cn.getTextWindow().setCursorPosition(c, r);
                 cn.getTextWindow().output(board.grid[r][c]);
             }
 
-        // Logic sembolleri (turuncu)
         for (int i = 0; i < symbolCount; i++) {
             if (symbols[i] == null) continue;
             writeColored(symbols[i].x, symbols[i].y, "" + symbols[i].symbol, Color.ORANGE);
         }
 
-        // Robotlar
         for (int i = 0; i < robotCount; i++) {
             Color col = robots[i].targeted ? Color.RED : Color.GREEN;
             writeColored(robots[i].x, robots[i].y, "X", col);
         }
 
-        // Fireball
         if (fireball.isActive())
             writeColored(fireball.x, fireball.y, "o", Color.CYAN);
-
-        // Oyuncu
         writeColored(player.x, player.y, "P", Color.GREEN);
-
-        // HUD
         renderHUD();
     }
 
     private void renderHUD() {
-        long sec = (System.currentTimeMillis() - startTime) / 1000;
+        long offMs = pausedMs + (currentScreen != MAZE && pauseStart > 0 ? System.currentTimeMillis() - pauseStart : 0);
+        long sec = (System.currentTimeMillis() - startTime - offMs) / 1000;
 
-        // Input kuyruğu
         writeText(HUD_X, 0, "Input");
         writeColored(HUD_X, 1, "<<<<<<<<<<<", Color.YELLOW);
         char[] q = inputQueue.getAll();
@@ -354,38 +386,77 @@ public class GameMain {
         writeText(HUD_X, 9, "Storage : " + (player.storageTree ? "Tree    " : "Backpack"));
 
         if (paused) writeColored(HUD_X, 11, "-- PAUSED --", Color.YELLOW);
+        else        writeText(HUD_X, 11, "            ");
+        writeColored(HUD_X, 12, "DBG sym=" + symbolCount + " rob=" + robotCount + "   ", Color.GRAY);
 
-        // Backpack
         writeText(HUD_X, 13, "+------+");
-        for (int i = 0; i < 8; i++) {
-            char ch = (i < player.backpackSize) ? player.backpack[i] : ' ';
-            writeText(HUD_X, 14 + i, "| " + ch + "    |");
-        }
+        String[] bp = player.printBackpack();
+        for (int i = 0; i < 8; i++)
+            writeText(HUD_X, 14 + i, bp[i]);
         writeText(HUD_X, 22, "+------+");
         writeText(HUD_X, 23, "Backpack");
     }
 
     private void renderTree() {
         clearScreen();
-        writeText(0, 0, "--- TREE SCREEN ---  Key 1: maze  Key F: finish");
-        writeText(0, 2, "Cursor: W=Parent  A=Left  D=Right  T=place  R=remove");
-        writeText(0, 4, "Cursor slot: " + tree.getCursorIndex());
-        writeText(0, 6, "Infix  : " + tree.toInfix());
-        writeText(0, 7, "Postfix: " + tree.toPostfix());
+
+        char[][] grid = tree.buildGrid();
+        int curIdx = tree.getCursorIndex();
+        int curGX  = tree.getNodeX(curIdx);
+        int curGY  = tree.getNodeY(curIdx);
+
+        for (int r = 0; r < tree.getGridRows(); r++) {
+            for (int c = 0; c < tree.getGridCols() && c < HUD_X - 1; c++) {
+                char ch = grid[r][c];
+                if (r == curGY && c == curGX) {
+                    writeColored(c, r, "" + ch, Color.GREEN);
+                } else if (ch == '/' || ch == '\\' || ch == '-') {
+                    writeColored(c, r, "" + ch, Color.DARK_GRAY);
+                } else if (ch != ' ' && ch != '.') {
+                    writeColored(c, r, "" + ch, Color.ORANGE);
+                } else if (ch == '.') {
+                    writeColored(c, r, ".", Color.DARK_GRAY);
+                }
+            }
+        }
+
+        int infoY = tree.getGridRows() + 1;   // row 10
+        long treeSec = screenEnterTime > 0 ? (System.currentTimeMillis() - screenEnterTime) / 1000 : 0;
+        writeText(0, infoY,     "W=Up  A=Left  D=Right  T=Place  R=Remove  F=Finish");
+        writeText(0, infoY + 1, "Cursor: node " + curIdx + "   ");
+
+        writeText(0, infoY + 3, "Expression");
+        writeText(0, infoY + 4, "Infix  : " + tree.toInfix() + "   ");
+        writeText(0, infoY + 5, "Postfix: " + tree.toPostfix() + "   ");
+
+        if (treeMessage.length() > 0)
+            writeColored(0, infoY + 7, treeMessage + "   ", Color.YELLOW);
+
+        writeColored(0, 22, "Time in Tree: " + treeSec + "s   ", Color.CYAN);
+
         renderHUD();
     }
 
     private void renderTable() {
         clearScreen();
+        long tableSec = screenEnterTime > 0 ? (System.currentTimeMillis() - screenEnterTime) / 1000 : 0;
         writeText(0, 0, "--- TABLE SCREEN ---  Key 1: maze");
+        writeColored(0, 22, "Time in Table: " + tableSec + "s   ", Color.CYAN);
         writeText(0, 2, truthTable.toString());
         renderHUD();
     }
 
-    // ================================================================
-    // YARDIMCI METODLARi
-    // ================================================================
+    // SCREEN MANAGEMENT
     private void switchScreen(int screen) {
+        if (screen != MAZE && currentScreen == MAZE) {
+            pauseStart = System.currentTimeMillis();
+            screenEnterTime = pauseStart;
+        } else if (screen == MAZE && currentScreen != MAZE && pauseStart > 0) {
+            pausedMs += System.currentTimeMillis() - pauseStart;
+            screenEnterTime = 0;
+        } else if (screen != MAZE) {
+            screenEnterTime = System.currentTimeMillis();
+        }
         currentScreen = screen;
         clearScreen();
     }
@@ -414,7 +485,6 @@ public class GameMain {
         }
     }
 
-    // Boş rastgele hücre döner [col, row]
     private int[] randomFreeCell() {
         for (int attempt = 0; attempt < 500; attempt++) {
             int c = 1 + rand.nextInt(Board.COLS - 2);

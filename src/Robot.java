@@ -5,12 +5,15 @@ public class Robot {
     public boolean targeted; // false=RANDOM(yeşil)  true=TARGETED(kırmızı)
 
     private int dirX = 1, dirY = 0;
+    private int modeTimer = 0;                   
+    private static final int MODE_SWITCH = 100;  // 100 tick = 10 saniye
     private static final Random rand = new Random();
 
     public Robot(int x, int y) {
         this.x = x;
         this.y = y;
         this.targeted = rand.nextBoolean();
+        this.modeTimer = rand.nextInt(MODE_SWITCH); 
         pickNewDirection();
     }
 
@@ -22,7 +25,16 @@ public class Robot {
             moveRandom(board, robots, robotCount, px, py);
     }
 
-    // targetX/targetY: en yakın sembol yoksa player konumu geçilir
+    // 10 saniyede bir mod değiştirir
+    public void tickModeSwitch() {
+        modeTimer++;
+        if (modeTimer >= MODE_SWITCH) {
+            modeTimer = 0;
+            targeted = rand.nextBoolean(); 
+        }
+    }
+
+    // targetX/targetY en yakın sembol yoksa player konumu geçilir
     public void stepTargeted(Board board, Robot[] robots, int robotCount,
                               int px, int py, int targetX, int targetY) {
         int[] dxs = {0, 0, -1, 1};
@@ -48,7 +60,6 @@ public class Robot {
         int nx = x + dirX, ny = y + dirY;
 
         if (board.isWall(nx, ny) || isOccupied(nx, ny, robots, robotCount, px, py)) {
-            // duvara çarptı — yeni yön dene
             for (int attempt = 0; attempt < 8; attempt++) {
                 pickNewDirection();
                 nx = x + dirX; ny = y + dirY;

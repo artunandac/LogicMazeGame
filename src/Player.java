@@ -4,15 +4,13 @@ public class Player {
     public int  hp           = 100;
     public int  score        = 0;
     public int  fireballCount = 0;
-    public boolean storageTree = true;   // true=TREE, false=BACKPACK
+    public boolean storageTree = false ;   // true=TREE, false=BACKPACK
 
-    public char[] backpack     = new char[8];
-    public int    backpackSize = 0;
+    private Queue backpackQueue = new Queue(8);
 
     // Son hareket yönü (fireball için)
     public int lastDx = 1, lastDy = 0;
 
-    // Duvara ve robota çarpmadan hareket; hareket edildiyse lastDx/lastDy güncellenir
     public boolean move(int dx, int dy, Board board, Robot[] robots, int robotCount) {
         if (dx == 0 && dy == 0) return false;
         int nx = x + dx, ny = y + dy;
@@ -24,21 +22,37 @@ public class Player {
         return true;
     }
 
-    // Backpack'e ekle; dolu ise false döner
     public boolean addToBackpack(char symbol) {
-        if (backpackSize >= backpack.length) return false;
-        backpack[backpackSize++] = symbol;
+        if (backpackQueue.isFull()) return false;
+        backpackQueue.enqueue(symbol);
         return true;
     }
 
-    // Backpack'ten idx konumundaki elemanı al, diziyi kaydır
     public char removeFromBackpack(int idx) {
-        if (idx < 0 || idx >= backpackSize) return 0;
-        char sym = backpack[idx];
-        for (int i = idx; i < backpackSize - 1; i++)
-            backpack[i] = backpack[i + 1];
-        backpackSize--;
-        return sym;
+        if (backpackQueue.isEmpty()) return 0;
+        return (char) backpackQueue.dequeue();
+    }
+
+    public int getBackpackSize() {
+        return backpackQueue.size();
+    }
+
+    // Backpack'i formatlanmış string dizisi olarak döndürür (HUD için)
+    public String[] printBackpack() {
+        int sz = backpackQueue.size();
+        // Queue'daki elemanları oku (dequeue + enqueue döngüsü)
+        char[] temp = new char[sz];
+        for (int i = 0; i < sz; i++) {
+            temp[i] = (char) backpackQueue.dequeue();
+            backpackQueue.enqueue(temp[i]);
+        }
+        // 8 satırlık formatlanmış çıktı oluştur
+        String[] lines = new String[8];
+        for (int i = 0; i < 8; i++) {
+            char ch = (i < sz) ? temp[i] : ' ';
+            lines[i] = "| " + ch + "    |";
+        }
+        return lines;
     }
 
     public void toggleStorageMode() { storageTree = !storageTree; }

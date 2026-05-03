@@ -1,7 +1,7 @@
 public class TruthTable {
 
-    private int[][] table;       // 16 satır × kolon sayısı
-    private int[]   questionRow; // her kolon için boş satır indeksi
+    private int[][] table;       // 16 satır × column sayısı
+    private int[]   questionRow; // her column için boş satır indeksi
 
     public void compute(ExpressionTree tree) {
         // TODO: A,B,C,D tüm 16 kombinasyonu hesapla
@@ -9,12 +9,12 @@ public class TruthTable {
 
     // +3 doğru, -2 yanlış
     public int checkAnswer(int col, int row, int answer) {
-        // TODO
+        // TODO: verilen cevaba göre puan hesapla, questionRow[col] güncelle, gerekirse tabloyu kaydır
         return 0;
     }
 
     public String[] getColumnNames() {
-        // TODO: ara ifade isimlerini döndür
+        // TODO: questionRow'daki boş satır indekslerine göre kolon isimlerini döndür.
         return new String[0];
     }
 

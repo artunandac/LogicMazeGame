@@ -3,38 +3,58 @@ import java.util.Random;
 public class InputQueue {
 
     private static final int SIZE = 10;
-    private char[] queue = new char[SIZE];
-    private int    head  = 0;
-    private int    size  = 0;
+    private Queue queue;
 
     private static final Random rand = new Random();
 
+    private static final char[] LOGIC_SYMBOLS = {
+        'A', 'B', 'C', 'D',       // Variables
+        'a', 'b', 'c', 'd',       // Negated variables 
+        '~', '^', 'v', '+', '>', '='  // Operators
+    };
+
     public InputQueue() {
-        // TODO: kuyruğu ilk 10 elemanla doldur
-        for (int i = 0; i < SIZE; i++) queue[i] = generateElement();
-        size = SIZE;
+        queue = new Queue(SIZE);
+        for (int i = 0; i < SIZE; i++) {
+            queue.enqueue(generateElement());
+        }
     }
 
-    // Baştaki elemanı al, yerine yeni üret
     public char dequeue() {
-        // TODO: circular queue implementasyonu
-        return ' ';
+        char element = (char) queue.dequeue();
+        queue.enqueue(generateElement());
+        return element;
     }
 
     public char peek() {
-        // TODO: baştaki elemana bak
-        return ' ';
+        return (char) queue.peek();
     }
-
-    // HUD gösterimi için tüm kuyruk
+    
+    //head'den başlar 
     public char[] getAll() {
-        // TODO: mevcut sırayla döndür
-        return new char[SIZE];
+        char[] result = new char[SIZE];
+        // Queue'daki tüm elemanları almak için dequeue + enqueue döngüsü
+        for (int i = 0; i < SIZE; i++) {
+            char c = (char) queue.dequeue();
+            result[i] = c;
+            queue.enqueue(c);
+        }
+        return result;
     }
 
     // 7/10 logic symbol, 2/10 @, 1/10 X
     private char generateElement() {
-        // TODO: olasılık dağılımına göre eleman üret
-        return ' ';
+        int roll = rand.nextInt(10);
+
+        if (roll <= 6) {
+            // 0-6 → Logic symbol (14 sembolden rastgele biri)
+            return LOGIC_SYMBOLS[rand.nextInt(LOGIC_SYMBOLS.length)];
+        } else if (roll <= 8) {
+            // 7-8 → Packed fireball
+            return '@';
+        } else {
+            // 9   → Robot
+            return 'X';
+        }
     }
 }

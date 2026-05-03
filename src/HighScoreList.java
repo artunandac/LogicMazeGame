@@ -14,9 +14,8 @@ public class HighScoreList {
     private Node tail = null;
     private int  size = 0;
 
-    // Azalan sıraya göre ekle
     public void insert(String name, int score) {
-        // TODO
+        // TODO yeni skor için uygun pozisyonu bul, ekle, gerekirse tail'i güncelle
     }
 
     public void loadFromFile(String fileName) {
@@ -29,7 +28,7 @@ public class HighScoreList {
 
     @Override
     public String toString() {
-        // TODO: listeleme
+        // TODO: listelenmiş skorları tek string olarak döndür
         return "";
     }
 }
